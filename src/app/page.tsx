@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase";
-import { calculateCurrentValue, getMaxDecimalPlaces, formatCount, CountdownData } from "@/lib/countdown";
+import { calculateCurrentValue, getMaxDecimalPlaces, formatCount, formatDecimalString, CountdownData } from "@/lib/countdown";
 
 export default function Home() {
   // Use string state for inputs to allow empty and decimal values
@@ -25,9 +25,15 @@ export default function Home() {
         setCountdown(data);
         setCurrentValue(calculateCurrentValue(data));
         
-        // Update input fields with current values
-        setStartValueInput(data.start_value.toString());
-        setRateInput(data.rate_per_second.toString());
+        // Only update input fields if this is the first load and no countdown exists
+        if (!countdown) {
+          // Convert to proper decimal strings to avoid scientific notation
+          const startValueStr = formatDecimalString(data.start_value);
+          const rateStr = formatDecimalString(data.rate_per_second);
+          
+          setStartValueInput(startValueStr);
+          setRateInput(rateStr);
+        }
       } else {
         // No countdown exists, create default
         setCountdown(null);
@@ -39,7 +45,20 @@ export default function Home() {
     } finally {
       setIsLoading(false);
     }
-  }, [startValue]);
+  }, [startValue, countdown]);
+
+  const refreshCountdown = useCallback(async () => {
+    try {
+      const response = await fetch('/api/countdown');
+      if (response.ok) {
+        const data = await response.json();
+        setCountdown(data);
+        setCurrentValue(calculateCurrentValue(data));
+      }
+    } catch (error) {
+      console.error('Failed to refresh countdown:', error);
+    }
+  }, []);
 
   // Load initial countdown data
   useEffect(() => {
@@ -59,7 +78,7 @@ export default function Home() {
         },
         (payload) => {
           console.log('Real-time update:', payload);
-          loadCountdown();
+          refreshCountdown();
         }
       )
       .subscribe();
@@ -67,7 +86,7 @@ export default function Home() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [supabase, loadCountdown]);
+  }, [supabase, refreshCountdown]);
 
   // Update current value every second when running
   useEffect(() => {

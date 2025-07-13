@@ -30,4 +30,9 @@ export const getMaxDecimalPlaces = (startValue: string, rate: string): number =>
 
 export const formatCount = (value: number, maxDecimals: number): string => {
   return value.toFixed(maxDecimals)
+}
+
+export const formatDecimalString = (value: number): string => {
+  // Convert to string with up to 10 decimal places, then remove trailing zeros
+  return value.toFixed(10).replace(/\.?0+$/, '')
 } 
