@@ -1,60 +1,177 @@
 "use client";
-import { useState, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { createSupabaseBrowserClient } from "@/lib/supabase";
+import { calculateCurrentValue, getMaxDecimalPlaces, formatCount, CountdownData } from "@/lib/countdown";
 
 export default function Home() {
   // Use string state for inputs to allow empty and decimal values
   const [startValueInput, setStartValueInput] = useState("100");
   const [rateInput, setRateInput] = useState("1");
-  // Store the actual number values for countdown logic
-  const [count, setCount] = useState(100);
-  const [isRunning, setIsRunning] = useState(false);
+  const [countdown, setCountdown] = useState<CountdownData | null>(null);
+  const [currentValue, setCurrentValue] = useState(100);
+  const [isLoading, setIsLoading] = useState(true);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const supabase = createSupabaseBrowserClient();
 
   // Parse input values as floats, fallback to 0 if invalid
   const startValue = parseFloat(startValueInput) || 0;
   const rate = parseFloat(rateInput) || 0;
 
-  // Calculate maximum decimal places needed
-  const getMaxDecimalPlaces = () => {
-    const startDecimals = startValueInput.includes('.') ? startValueInput.split('.')[1].length : 0;
-    const rateDecimals = rateInput.includes('.') ? rateInput.split('.')[1].length : 0;
-    return Math.max(startDecimals, rateDecimals);
-  };
+  const loadCountdown = useCallback(async () => {
+    try {
+      const response = await fetch('/api/countdown');
+      if (response.ok) {
+        const data = await response.json();
+        setCountdown(data);
+        setCurrentValue(calculateCurrentValue(data));
+        
+        // Update input fields with current values
+        setStartValueInput(data.start_value.toString());
+        setRateInput(data.rate_per_second.toString());
+      } else {
+        // No countdown exists, create default
+        setCountdown(null);
+        setCurrentValue(startValue);
+      }
+    } catch (error) {
+      console.error('Failed to load countdown:', error);
+      setCurrentValue(startValue);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [startValue]);
 
-  // Format count with appropriate decimal places
-  const formatCount = (value: number) => {
-    const maxDecimals = getMaxDecimalPlaces();
-    return value.toFixed(maxDecimals);
-  };
+  // Load initial countdown data
+  useEffect(() => {
+    loadCountdown();
+  }, [loadCountdown]);
+
+  // Set up real-time subscription
+  useEffect(() => {
+    const channel = supabase
+      .channel('countdown_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'countdowns'
+        },
+        (payload) => {
+          console.log('Real-time update:', payload);
+          loadCountdown();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [supabase, loadCountdown]);
+
+  // Update current value every second when running
+  useEffect(() => {
+    if (countdown?.is_running) {
+      intervalRef.current = setInterval(() => {
+        if (countdown) {
+          const newValue = calculateCurrentValue(countdown);
+          setCurrentValue(newValue);
+          
+          // Stop if reached zero
+          if (newValue <= 0) {
+            clearInterval(intervalRef.current!);
+            setCountdown(prev => prev ? { ...prev, is_running: false } : null);
+          }
+        }
+      }, 1000);
+    } else {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+      if (countdown) {
+        setCurrentValue(calculateCurrentValue(countdown));
+      }
+    }
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    };
+  }, [countdown]);
 
   // Start countdown
-  const handleStart = () => {
-    if (isRunning) return;
-    setIsRunning(true);
-    intervalRef.current = setInterval(() => {
-      setCount((prev) => {
-        const next = prev - rate;
-        if (next <= 0) {
-          clearInterval(intervalRef.current!);
-          setIsRunning(false);
-          return 0;
-        }
-        return next;
+  const handleStart = async () => {
+    try {
+      const response = await fetch('/api/countdown', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ startValue, rate })
       });
-    }, 1000);
+
+      if (response.ok) {
+        const data = await response.json();
+        setCountdown(data);
+        setCurrentValue(calculateCurrentValue(data));
+      }
+    } catch (error) {
+      console.error('Failed to start countdown:', error);
+    }
   };
 
   // Pause countdown
-  const handlePause = () => {
-    setIsRunning(false);
-    if (intervalRef.current) clearInterval(intervalRef.current);
+  const handlePause = async () => {
+    try {
+      const response = await fetch('/api/countdown/control', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'pause' })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setCountdown(data);
+      }
+    } catch (error) {
+      console.error('Failed to pause countdown:', error);
+    }
+  };
+
+  // Resume countdown
+  const handleResume = async () => {
+    try {
+      const response = await fetch('/api/countdown/control', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'resume' })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setCountdown(data);
+      }
+    } catch (error) {
+      console.error('Failed to resume countdown:', error);
+    }
   };
 
   // Reset countdown
-  const handleReset = () => {
-    setIsRunning(false);
-    if (intervalRef.current) clearInterval(intervalRef.current);
-    setCount(startValue);
+  const handleReset = async () => {
+    try {
+      const response = await fetch('/api/countdown/control', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reset', startValue, rate })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setCountdown(data);
+        setCurrentValue(calculateCurrentValue(data));
+      }
+    } catch (error) {
+      console.error('Failed to reset countdown:', error);
+    }
   };
 
   // Update start value input
@@ -63,11 +180,6 @@ export default function Home() {
     // Allow only valid float input (including empty string)
     if (/^\d*\.?\d*$/.test(val)) {
       setStartValueInput(val);
-      if (val === "") {
-        setCount(0);
-      } else {
-        setCount(parseFloat(val) || 0);
-      }
     }
   };
 
@@ -79,6 +191,19 @@ export default function Home() {
       setRateInput(val);
     }
   };
+
+  // Calculate display values
+  const maxDecimals = getMaxDecimalPlaces(startValueInput, rateInput);
+  const displayValue = formatCount(currentValue, maxDecimals);
+  const isRunning = countdown?.is_running || false;
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-slate-50 via-gray-50 to-stone-100">
+        <div className="text-gray-600">Loading...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-slate-50 via-gray-50 to-stone-100">
@@ -111,23 +236,33 @@ export default function Home() {
           </label>
         </div>
         <div className="text-5xl font-extralight text-gray-900 tracking-wider mb-6 select-none font-mono min-w-[400px] text-center">
-          {Number.isNaN(count) ? "0" : formatCount(count)}
+          {displayValue}
         </div>
         <div className="flex gap-4">
-          <button
-            onClick={handleStart}
-            disabled={isRunning || count === 0 || rate === 0}
-            className="px-8 py-3 rounded-lg bg-gray-800 text-white font-medium shadow-lg hover:bg-gray-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-all duration-200"
-          >
-            Start
-          </button>
-          <button
-            onClick={handlePause}
-            disabled={!isRunning}
-            className="px-8 py-3 rounded-lg bg-gray-600 text-white font-medium shadow-lg hover:bg-gray-500 disabled:bg-gray-200 disabled:cursor-not-allowed transition-all duration-200"
-          >
-            Pause
-          </button>
+          {!isRunning ? (
+            <button
+              onClick={handleStart}
+              disabled={currentValue === 0 || rate === 0}
+              className="px-8 py-3 rounded-lg bg-gray-800 text-white font-medium shadow-lg hover:bg-gray-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-all duration-200"
+            >
+              Start
+            </button>
+          ) : (
+            <button
+              onClick={handlePause}
+              className="px-8 py-3 rounded-lg bg-gray-600 text-white font-medium shadow-lg hover:bg-gray-500 transition-all duration-200"
+            >
+              Pause
+            </button>
+          )}
+          {!isRunning && countdown && (
+            <button
+              onClick={handleResume}
+              className="px-8 py-3 rounded-lg bg-gray-600 text-white font-medium shadow-lg hover:bg-gray-500 transition-all duration-200"
+            >
+              Resume
+            </button>
+          )}
           <button
             onClick={handleReset}
             className="px-8 py-3 rounded-lg bg-gray-100 text-gray-700 font-medium shadow-lg hover:bg-gray-200 transition-all duration-200"
