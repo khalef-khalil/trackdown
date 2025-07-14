@@ -239,6 +239,7 @@ export default function Home() {
               className="mt-2 rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-gray-50/50 text-gray-900 font-mono text-lg transition-all"
               disabled={isRunning}
               placeholder="0"
+              aria-label="Start Value"
             />
           </label>
           <label className="flex flex-col text-gray-700 font-medium">
@@ -251,6 +252,7 @@ export default function Home() {
               className="mt-2 rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-gray-50/50 text-gray-900 font-mono text-lg transition-all"
               disabled={isRunning}
               placeholder="0"
+              aria-label="Rate per second"
             />
           </label>
         </div>
@@ -263,6 +265,7 @@ export default function Home() {
               onClick={handleStart}
               disabled={currentValue === 0 || rate === 0}
               className="px-8 py-3 rounded-lg bg-gray-800 text-white font-medium shadow-lg hover:bg-gray-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-all duration-200"
+              aria-label="Start Countdown"
             >
               Start
             </button>
@@ -270,6 +273,7 @@ export default function Home() {
             <button
               onClick={handlePause}
               className="px-8 py-3 rounded-lg bg-gray-600 text-white font-medium shadow-lg hover:bg-gray-500 transition-all duration-200"
+              aria-label="Pause Countdown"
             >
               Pause
             </button>
@@ -278,6 +282,7 @@ export default function Home() {
             <button
               onClick={handleResume}
               className="px-8 py-3 rounded-lg bg-gray-600 text-white font-medium shadow-lg hover:bg-gray-500 transition-all duration-200"
+              aria-label="Resume Countdown"
             >
               Resume
             </button>
@@ -285,6 +290,7 @@ export default function Home() {
           <button
             onClick={handleReset}
             className="px-8 py-3 rounded-lg bg-gray-100 text-gray-700 font-medium shadow-lg hover:bg-gray-200 transition-all duration-200"
+            aria-label="Reset Countdown"
           >
             Reset
           </button>
